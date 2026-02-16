@@ -74,3 +74,24 @@ def test_plan_feasibility():
     plan = scheduler.generate_plan(pet)
 
     assert plan.is_feasible(owner.daily_available_time) == (plan.total_time_used <= owner.daily_available_time)
+
+
+def test_task_mark_complete():
+    t = Task(task_id=10, name="Test Task", category=Category.OTHER, duration=5, priority=Priority.LOW, pet_id=1, frequency=Frequency.DAILY)
+    assert not t.completed
+    t.mark_complete()
+    assert t.completed
+
+
+def test_add_task_increases_pet_task_count():
+    tm = TaskManager()
+    pet = Pet("Buddy", "dog", pet_id=10)
+
+    # count tasks for this pet before adding
+    before = len([t for t in tm.get_all_tasks() if t.pet_id == pet.pet_id])
+
+    new_task = Task(task_id=11, name="Walk", category=Category.WALK, duration=15, priority=Priority.HIGH, pet_id=10, frequency=Frequency.DAILY)
+    tm.add_task(new_task)
+
+    after = len([t for t in tm.get_all_tasks() if t.pet_id == pet.pet_id])
+    assert after == before + 1
