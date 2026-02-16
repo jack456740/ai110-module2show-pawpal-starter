@@ -50,15 +50,18 @@ class PetOwner:
 
     def update_available_time(self, minutes: int) -> None:
         """Update the owner's available time for pet care."""
-        pass
+        if minutes < 0:
+            raise ValueError("Available time cannot be negative")
+        self.daily_available_time = minutes
 
     def update_preferences(self, preferences: Dict) -> None:
         """Update owner's preferences."""
-        pass
+        self.preferences.update(preferences)
 
     def add_pet(self, pet: 'Pet') -> None:
         """Add a pet to the owner's household."""
-        pass
+        if pet not in self.pets:
+            self.pets.append(pet)
 
 
 @dataclass
@@ -72,11 +75,12 @@ class Pet:
 
     def update_special_needs(self, special_needs: List[str]) -> None:
         """Update the pet's special needs."""
-        pass
+        self.special_needs = special_needs
 
     def add_special_need(self, need: str) -> None:
         """Add a single special need."""
-        pass
+        if need not in self.special_needs:
+            self.special_needs.append(need)
 
 
 @dataclass
@@ -92,15 +96,17 @@ class Task:
 
     def update_duration(self, duration: int) -> None:
         """Update task duration."""
-        pass
+        if duration <= 0:
+            raise ValueError("Duration must be positive")
+        self.duration = duration
 
     def update_priority(self, priority: Priority) -> None:
         """Update task priority."""
-        pass
+        self.priority = priority
 
     def update_category(self, category: Category) -> None:
         """Update task category."""
-        pass
+        self.category = category
 
 
 @dataclass
@@ -110,19 +116,37 @@ class TaskManager:
 
     def add_task(self, task: Task) -> None:
         """Add a task to the manager."""
-        pass
+        self.tasks.append(task)
 
     def edit_task(self, task_id: int, updates: Dict) -> None:
         """Edit an existing task."""
-        pass
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            raise ValueError(f"Task with ID {task_id} not found")
+        
+        # Update allowed fields
+        if "name" in updates:
+            task.name = updates["name"]
+        if "category" in updates:
+            task.category = updates["category"]
+        if "duration" in updates:
+            task.duration = updates["duration"]
+        if "priority" in updates:
+            task.priority = updates["priority"]
+        if "frequency" in updates:
+            task.frequency = updates["frequency"]
+        if "pet_id" in updates:
+            task.pet_id = updates["pet_id"]
 
     def remove_task(self, task_id: int) -> bool:
         """Remove a task by ID."""
-        pass
+        original_length = len(self.tasks)
+        self.tasks = [t for t in self.tasks if t.task_id != task_id]
+        return len(self.tasks) < original_length
 
     def get_all_tasks(self) -> List[Task]:
         """Get all tasks."""
-        pass
+        return self.tasks.copy()
 
     def get_task_by_id(self, task_id: int) -> Optional[Task]:
         """Get a task by ID."""
@@ -227,4 +251,47 @@ class Scheduler:
 
     def explain_plan(self, plan: SchedulePlan) -> str:
         """Generate a human-readable explanation of the plan."""
-        pass
+        lines = []
+        
+        # Header
+        pet_name = plan.pet.name if plan.pet else "Unknown Pet"
+        owner_name = self.owner.name
+        lines.append(f"📅 Daily Care Plan for {pet_name} (Owner: {owner_name})")
+        lines.append(f"   Available time: {self.owner.daily_available_time} minutes")
+        lines.append("")
+        
+        # Scheduled tasks section
+        if plan.scheduled_tasks:
+            lines.append("✅ SCHEDULED TASKS:")
+            cumulative_time = 0
+            for i, task in enumerate(plan.scheduled_tasks, 1):
+                start_time = cumulative_time
+                end_time = cumulative_time + task.duration
+                priority_emoji = "🔴" if task.priority == Priority.HIGH else "🟡" if task.priority == Priority.MEDIUM else "🟢"
+                lines.append(f"   {i}. {priority_emoji} {task.name} ({task.duration}min) [{start_time}-{end_time}min]")
+                cumulative_time += task.duration
+            lines.append("")
+            lines.append(f"   Total scheduled: {plan.total_time_used}/{self.owner.daily_available_time} minutes")
+            remaining = self.owner.daily_available_time - plan.total_time_used
+            if remaining > 0:
+                lines.append(f"   Remaining free time: {remaining} minutes")
+            lines.append("")
+        else:
+            lines.append("✅ SCHEDULED TASKS: None")
+            lines.append("")
+        
+        # Unscheduled tasks section
+        if plan.unscheduled_tasks:
+            lines.append("⚠️  COULD NOT FIT (Lower Priority / Not Enough Time):")
+            for task in plan.unscheduled_tasks:
+                priority_emoji = "🔴" if task.priority == Priority.HIGH else "🟡" if task.priority == Priority.MEDIUM else "🟢"
+                reason = "insufficient time" if self.owner.daily_available_time - plan.total_time_used < task.duration else "lower priority"
+                lines.append(f"   • {priority_emoji} {task.name} ({task.duration}min) — {reason}")
+        else:
+            lines.append("⚠️  COULD NOT FIT: All tasks scheduled!")
+        
+        lines.append("")
+        lines.append("📌 Scheduling logic: Tasks prioritized by urgency (HIGH→MEDIUM→LOW).")
+        lines.append("   Only daily tasks included. Tasks fit greedily in order of priority.")
+        
+        return "\n".join(lines)
