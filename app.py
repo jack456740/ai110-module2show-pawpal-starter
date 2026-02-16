@@ -1,5 +1,17 @@
 import streamlit as st
 
+# Backend models
+from pawpal_system import (
+    PetOwner,
+    Pet,
+    Task,
+    TaskManager,
+    Scheduler,
+    Priority,
+    Category,
+    Frequency,
+)
+
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 st.title("🐾 PawPal+")
@@ -38,51 +50,67 @@ At minimum, your system should:
 
 st.divider()
 
-st.subheader("Quick Demo Inputs (UI only)")
+# --- Minimal wiring to backend models in session state ---
+st.subheader("Quick Demo — Backend Wiring")
+
+# Initialize or reuse backend objects in session state
 owner_name = st.text_input("Owner name", value="Jordan")
-pet_name = st.text_input("Pet name", value="Mochi")
-species = st.selectbox("Species", ["dog", "cat", "other"])
+if 'owner' not in st.session_state:
+    st.session_state['owner'] = PetOwner(name=owner_name, daily_available_time=150)
+if 'task_manager' not in st.session_state:
+    st.session_state['task_manager'] = TaskManager()
+if 'scheduler' not in st.session_state:
+    st.session_state['scheduler'] = Scheduler(owner=st.session_state['owner'], task_manager=st.session_state['task_manager'])
 
-st.markdown("### Tasks")
-st.caption("Add a few tasks. In your final version, these should feed into your scheduler.")
+owner = st.session_state['owner']
+tm = st.session_state['task_manager']
+scheduler = st.session_state['scheduler']
 
-if "tasks" not in st.session_state:
-    st.session_state.tasks = []
+st.markdown("### Add a Pet")
+with st.form("add_pet"):
+    pet_name = st.text_input("Name")
+    species = st.selectbox("Species", ["dog", "cat", "other"])
+    age = st.number_input("Age", min_value=0, value=1)
+    submitted = st.form_submit_button("Add pet")
+    if submitted:
+        pet_id = max([p.pet_id for p in owner.pets], default=0) + 1
+        new_pet = Pet(name=pet_name, species=species, pet_id=pet_id, age=age)
+        owner.add_pet(new_pet)                      # uses PetOwner.add_pet()
+        # update scheduler reference
+        st.session_state['scheduler'] = Scheduler(owner=owner, task_manager=tm)
+        st.success(f"Added pet {new_pet.name}")
+        st.experimental_rerun()
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    task_title = st.text_input("Task title", value="Morning walk")
-with col2:
-    duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
-with col3:
-    priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
-
-if st.button("Add task"):
-    st.session_state.tasks.append(
-        {"title": task_title, "duration_minutes": int(duration), "priority": priority}
-    )
-
-if st.session_state.tasks:
-    st.write("Current tasks:")
-    st.table(st.session_state.tasks)
-else:
-    st.info("No tasks yet. Add one above.")
+st.markdown("### Add a Task")
+with st.form("add_task"):
+    if not owner.pets:
+        st.info("Add a pet first.")
+    else:
+        pet_options = {p.pet_id: p.name for p in owner.pets}
+        pet_choice = st.selectbox("Pet", options=list(pet_options.keys()), format_func=lambda pid: pet_options[pid])
+        task_name = st.text_input("Task name")
+        duration = st.number_input("Duration (minutes)", min_value=1, value=10)
+        priority = st.selectbox("Priority", [Priority.HIGH, Priority.MEDIUM, Priority.LOW], format_func=lambda p: p.name)
+        category = st.selectbox("Category", [Category.FEEDING, Category.WALK, Category.ENRICHMENT], format_func=lambda c: c.name)
+        frequency = st.selectbox("Frequency", [Frequency.DAILY], format_func=lambda f: f.name)
+        submitted = st.form_submit_button("Add task")
+        if submitted:
+            next_id = max([t.task_id for t in tm.get_all_tasks()], default=0) + 1
+            task = Task(task_id=next_id, name=task_name, category=category, duration=int(duration), priority=priority, pet_id=pet_choice, frequency=frequency)
+            tm.add_task(task)                          # uses TaskManager.add_task()
+            st.success(f"Added task '{task_name}' for {pet_options[pet_choice]}")
+            st.experimental_rerun()
 
 st.divider()
 
-st.subheader("Build Schedule")
-st.caption("This button should call your scheduling logic once you implement it.")
+st.subheader("Tasks")
+for t in tm.get_all_tasks():
+    st.write(f"{t.task_id}: {t.name} — {t.duration} min — Pet {t.pet_id} — {t.priority.name}")
 
-if st.button("Generate schedule"):
-    st.warning(
-        "Not implemented yet. Next step: create your scheduling logic (classes/functions) and call it here."
-    )
-    st.markdown(
-        """
-Suggested approach:
-1. Design your UML (draft).
-2. Create class stubs (no logic).
-3. Implement scheduling behavior.
-4. Connect your scheduler here and display results.
-"""
-    )
+st.divider()
+
+st.subheader("Per-Pet Schedules")
+for pet in owner.pets:
+    st.write(f"### {pet.name} ({pet.species})")
+    plan = scheduler.generate_plan(pet)             # generate schedule after changes
+    st.text(scheduler.explain_plan(plan))           # human-readable explanation
